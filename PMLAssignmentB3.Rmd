@@ -1,0 +1,225 @@
+---
+title: "MachineLearning_Assignment"
+author: "Ivan"
+date: "Sunday, March 22, 2015"
+output: html_document
+---
+
+**Background**
+
+The uses of devices such as Jawbone Up, Nike FuelBand, and Fitbit is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. Participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).*
+
+**Data Source**
+
+The data source was provided by Groupware and we would like to thank you them for being so generous. Here is their address [http://groupware.les.inf.puc-rio.br/har].
+
+The training data for this project are available here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv].  The test data are available here: [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv].
+
+*The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv*
+
+
+###Background Work  
+
+###1) Reproduceability
+We shall use a number generator to set seed to  1234 for all codes.   
+
+```{r}
+set.seed(1234) 
+```
+
+###2) Model Building
+The key outcome shall be Classe which has a factor of 5 levels and the participans shall perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in 5 different fashions as below table :
+
+----------------------------------------------------
+| **Class Type**    | **Description**               |           |
+| ---------|--------------------------------------- | 
+| Class A  | exactly according to the specification |
+| Class B  | throwing the elbows to the front       |
+| Class C  | lifting the dumbbell only halfway      |
+| Class D  | lowering the dumbbell only halfway     |
+| Class E  | throwing the hips to the front         |
+----------------------------------------------------
+
+Note`:  
+* Class A shall corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.  
+* Prediction evaluations will be based on maximizing the accuracy and minimizing the out-of-sample error.  
+* All other available variables after cleaning will be used for prediction.  
+* Two models will be tested using decision tree and random forest algorithms.    
+* The model with the highest accuracy will be chosen as our final model. 
+
+###3) Cross-validation
+
+Cross-validation will be performed by subsampling our training data set randomly without replacement into 2 subsamples:  
+SubTraining data (75% of the original Training data set) and subTesting data (25%).  
+Our models willj first be fitted on the subTraining data set, and tested on the subTesting data. Once the most accurate model is choosen then we will test it on the original Testing data set.
+
+### Development
+
+###1) Setwd, Packages, Libraries
+Here we set and initilize all the Libraries, package such as caret, dplyr, lattice, randomForest were used. 
+
+
+```{r}
+setwd("C:/DataScience/Machine Learning/Assignment")
+library(caret)
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+```
+
+
+###2) Loading data for cleaning  
+First we want to load the data sets into R and make sure that missing values are coded correctly.  
+* Irrelevant variables will be deleted.  
+* Results will be hidden from the report for clarity and space considerations.  
+* Missing values coded as string "#DIV/0!" or "NA" shall be changed to NA
+* Data sets contain columns with all missing values will be deleted.  
+
+#### Loading the training data set into my R session replacing all missing with "NA"
+
+```{r}
+trainingset <- read.csv("./pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+```
+
+#### Loading the testing data set 
+```{r}
+testingset <- read.csv("./pml-testing.csv", na.strings=c("NA","#DIV/0!", ""))
+```
+                       
+#### Checking the dimensions for number of variables and number of observations
+```{r}
+dim(trainingset)
+dim(testingset)
+```
+
+#### Delete the columns with missing values
+```{r}
+trainingset<-trainingset[,colSums(is.na(trainingset)) == 0]
+testingset <-testingset[,colSums(is.na(testingset)) == 0]
+```
+**We noticed some variables are irrelevant to our current project like user_name, raw_timestamp_part_1, raw_timestamp_part_,2 cvtd_timestamp, new_window, and  num_window (columns 1 to 7).**   
+*In view of such, we can delete these variables to improve the run time the project.*
+```{r}
+trainingset   <-trainingset[,-c(1:7)]
+testingset <-testingset[,-c(1:7)]
+```
+
+
+###3) Analysing the new datasets 
+```{r}
+dim(trainingset)
+dim(testingset)
+head(trainingset)
+head(testingset)
+```
+
+*We need to partition the training data set to allow cross-validation*
+Here is what we have gathered
+
+a) The training data set contains 53 variables and 19622 obs.  
+b) The testing data set contains 53 variables and 20 obs.  
+
+In order to perform cross-validation, the training data set is parted into 2 sets:  
+* SubTraining (75%) and SubTest (25%).  
+* This will be performed using random subsampling without replacement.  
+
+```{r}
+subsamples <- createDataPartition(y=trainingset$classe, p=0.75, list=FALSE)
+subTraining <- trainingset[subsamples, ] 
+subTesting <- trainingset[-subsamples, ]
+dim(subTraining)
+dim(subTesting)
+head(subTraining)
+head(subTesting)
+```
+
+####Looking at the Data
+
+The variable "classe" contains 5 levels: A, B, C, D and E. A plot of the outcome variable will allow us to see the frequency of each levels in the subTraining data set and compare one another.
+
+```{r}
+plot(subTraining$classe, col="blue", main="Bar Plot of levels of the variable classe within the subTraining data set", xlab="classe levels", ylab="Frequency")
+```
+
+#### Chunk Plot
+
+The  graph above, we can see that each level frequency is within the same order of magnitude of each other. Level A is the most frequent with more than 4000 occurrences while level D is the least frequent with about 2500 occurrences.
+
+
+#####1) First Prediction model: Using Decision Tree
+
+```{r}
+model1 <- rpart(classe ~ ., data=subTraining, method="class")
+```
+
+## Predicting:
+```{r}
+prediction1 <- predict(model1, subTesting, type= "class")
+```
+
+### Plot the Decision Tree
+
+```{r}
+rpart.plot(model1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+
+###Plot the chunk decisiontree
+
+### Test results on our subTesting data set:
+```{r}
+confusionMatrix(prediction1, subTesting$classe)
+
+```
+
+
+###2) Second Prediction model: Using Random Forest
+```{r}
+model2 <- randomForest(classe ~. , data=subTraining, method="class")
+prediction2 <- predict(model2, subTesting, type = "class")
+mymatrix <- confusionMatrix(prediction2, subTesting$classe)
+```
+
+### Predicting:
+```{r}
+prediction2 <- predict(model2, subTesting, type = "class")
+```
+
+### Test results on subTesting data set:
+```{r}
+confusionMatrix(prediction2, subTesting$classe)
+```
+
+
+### Decision
+
+As we expected, the Random Forest algorithm performed better than the Decision Trees.
+Accuracy for Random Forest model was 0.995 (95% CI: (0.993, 0.997)) which compared to 0.739 (95% CI: (0.727, 0.752)) for the Decision Tree. In view of such, the  random Forest model is choosen. The accuracy of the model is 0.995. The expected out-of-sample error is estimated at 0.005, or 0.5%. The expected out-of-sample error is calculated as 1 - accuracy for predictions made against the cross-validation set. TheTest data set comprises of 20 cases and withan accuracy above 99% on our cross-validation data, we can expect that very few, or none, of the test samples will be missclassified.
+
+###Submission
+
+#### The predicedt outcome levels on the original Testing data set using the Random Forest algorithm
+```{r}
+predictfinal <- predict(model2, testingset, type="class")
+predictfinal
+```
+
+### Generate files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictfinal)
+
